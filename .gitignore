@@ -1,0 +1,7 @@
+.venv/
+.venv-indicconformer/
+models/
+__pycache__/
+training-data/
+training-runs/
+vocabulary.local.json
