@@ -39,7 +39,7 @@ def serve_word_timestamp_asr(backend, *, model_size, model_path):
         backend_policy="localagreement",
         lan=os.environ["NEPALISH_LANGUAGE"],
         min_chunk_size=0.5,
-        asr_coalesce_min_s=2,
+        asr_coalesce_min_s=1 if os.environ.get("NEPALISH_LOW_LATENCY") == "1" else 2,
         log_level="WARNING",
     )
     uvicorn.run(create_app(config), host=config.host, port=config.port)

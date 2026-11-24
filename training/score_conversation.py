@@ -10,7 +10,7 @@ import soundfile as sf
 from training.asr_metrics import score
 
 
-def create_decoder(engine, directory, language, *, short_windows=False):
+def create_decoder(engine, directory, language, *, short_windows=False, keywords_file=None):
     if engine == "shruti":
         from cactus import Whistle
 
@@ -21,7 +21,7 @@ def create_decoder(engine, directory, language, *, short_windows=False):
     elif engine == "indicconformer":
         from indicconformer_backend import load_indicconformer, transcribe_indicconformer
 
-        model = load_indicconformer(directory / "indicconformer-ne-en-codemix.nemo")
+        model = load_indicconformer(directory / "indicconformer-ne-en-codemix.nemo", keywords_file=keywords_file)
 
         def decode(audio):
             return transcribe_indicconformer(model, audio).text
@@ -45,10 +45,14 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--language", default="ne")
     parser.add_argument("--short-windows", action="store_true", help="Try shorter NepTrans encoder windows")
+    parser.add_argument("--keywords-file", type=Path, help="IndicConformer vocabulary, one phrase per line")
     args = parser.parse_args()
     if args.short_windows and args.engine != "neptrans":
         parser.error("--short-windows applies to NepTrans")
-    decode = create_decoder(args.engine, args.model, args.language, short_windows=args.short_windows)
+    if args.keywords_file and args.engine != "indicconformer":
+        parser.error("--keywords-file applies to IndicConformer")
+    decode = create_decoder(args.engine, args.model, args.language, short_windows=args.short_windows,
+                            keywords_file=args.keywords_file)
     rows = json.loads(args.manifest.read_text(encoding="utf-8"))
     seconds = 0.0
     for index, row in enumerate(rows, start=1):
@@ -73,6 +77,8 @@ def main():
     elapsed = sum(row["decode_seconds"] for row in rows)
     report = {"model": args.engine, "language": args.language, "short_windows": args.short_windows, "audio_seconds": seconds,
               "decode_seconds": elapsed, "real_time_factor": elapsed / seconds, "scores": scores}
+    if args.keywords_file:
+        report["keywords_file"] = str(args.keywords_file)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps({**report, "predictions": rows}, ensure_ascii=False, indent=2) + "\n",
                            encoding="utf-8")

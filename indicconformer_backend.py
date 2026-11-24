@@ -1,19 +1,31 @@
 """Run the Nepali–English IndicConformer on local CPU audio."""
 
 import os
+from pathlib import Path
 from threading import Lock
 
 import torch
 from nemo.collections.asr.models import ASRModel
 from nemo.utils import logging as nemo_logging
+from omegaconf import OmegaConf
 from whisperlivekit.timed_objects import ASRToken
 
 from word_timestamp_backend import WordTimestampASR, serve_word_timestamp_asr
 
 
-def load_indicconformer(model_path):
+def load_indicconformer(model_path, *, keywords_file=None):
     torch.set_num_threads(int(os.environ.get("OMP_NUM_THREADS", "4")))
-    return ASRModel.restore_from(str(model_path), map_location=torch.device("cpu")).eval()
+    model = ASRModel.restore_from(str(model_path), map_location=torch.device("cpu")).eval()
+    if keywords_file:
+        phrases = [line.strip().lower() for line in Path(keywords_file).read_text(encoding="utf-8").splitlines()]
+        phrases = list(dict.fromkeys(phrase for phrase in phrases if phrase))
+        if phrases:
+            config = OmegaConf.create(OmegaConf.to_container(model.cfg.decoding))
+            config.greedy.boosting_tree.key_phrases_list = phrases
+            config.greedy.boosting_tree.use_triton = False
+            config.greedy.boosting_tree_alpha = 4.0
+            model.change_decoding_strategy(config, decoder_type="rnnt", verbose=False)
+    return model
 
 
 def transcribe_indicconformer(model, audio):
@@ -25,7 +37,7 @@ class IndicConformerASR(WordTimestampASR):
 
     def load_model(self, model_size=None, cache_dir=None, model_dir=None):
         self.decode_lock = Lock()
-        return load_indicconformer(model_dir)
+        return load_indicconformer(model_dir, keywords_file=os.environ.get("NEPALISH_KEYWORDS_FILE"))
 
     def transcribe(self, audio, init_prompt=""):
         if not len(audio):
